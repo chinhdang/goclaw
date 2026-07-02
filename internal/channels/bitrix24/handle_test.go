@@ -1056,3 +1056,135 @@ func TestHandleMessage_OL_UnknownConnector_FallsBackToMirrorUserID(t *testing.T)
 			participant.userID, participant.senderID)
 	}
 }
+
+// TestHandleMessage_OL_RosterStampedFromBody verifies an openline message
+// carrying `[Name]` mentions in its body stamps MetaKeyOpenlineRoster with
+// the pipe-joined, first-seen-order roster so send.go can re-wrap matching
+// names the LLM writes back unbracketed.
+func TestHandleMessage_OL_RosterStampedFromBody(t *testing.T) {
+	ch, mb := newHandleTestChannel(t, 1058, false)
+	defer resetWebhookRouterForTest()
+
+	ch.DispatchEvent(context.Background(), &Event{
+		Type: EventMessageAdd,
+		Params: EventParams{
+			FromUserID:      "960",
+			DialogID:        "chat9001",
+			MessageID:       "500001",
+			MessageType:     "L",
+			ChatEntityType:  "LINES",
+			Message:         "shop ơi có anh [Cường Egany] và chị [Hiền Trịnh] hỏi",
+			MessageOriginal: "[USER=1058]bot[/USER] shop ơi có anh [Cường Egany] và chị [Hiền Trịnh] hỏi",
+			MentionedList:   map[string]string{"1058": "1058"},
+			FromIsConnector: true,
+		},
+	})
+	msg, ok := drainOne(mb, 500*time.Millisecond)
+	if !ok {
+		t.Fatal("expected inbound message")
+	}
+	if got := msg.Metadata[MetaKeyOpenlineRoster]; got != "Cường Egany|Hiền Trịnh" {
+		t.Errorf("MetaKeyOpenlineRoster = %q; want %q", got, "Cường Egany|Hiền Trịnh")
+	}
+}
+
+// TestHandleMessage_OL_RosterCrossTurn verifies a name introduced in an
+// earlier turn still stamps on a later turn whose body has no brackets —
+// the roster is cached per-chat, not derived from the current text alone.
+func TestHandleMessage_OL_RosterCrossTurn(t *testing.T) {
+	ch, mb := newHandleTestChannel(t, 1058, false)
+	defer resetWebhookRouterForTest()
+
+	ch.DispatchEvent(context.Background(), &Event{
+		Type: EventMessageAdd,
+		Params: EventParams{
+			FromUserID:      "960",
+			DialogID:        "chat9002",
+			MessageID:       "500010",
+			MessageType:     "L",
+			ChatEntityType:  "LINES",
+			Message:         "có chị [Hiền Trịnh] hỏi giá",
+			MessageOriginal: "[USER=1058]bot[/USER] có chị [Hiền Trịnh] hỏi giá",
+			MentionedList:   map[string]string{"1058": "1058"},
+			FromIsConnector: true,
+		},
+	})
+	if _, ok := drainOne(mb, 500*time.Millisecond); !ok {
+		t.Fatal("turn 1: expected inbound message")
+	}
+
+	ch.DispatchEvent(context.Background(), &Event{
+		Type: EventMessageAdd,
+		Params: EventParams{
+			FromUserID:      "960",
+			DialogID:        "chat9002",
+			MessageID:       "500011",
+			MessageType:     "L",
+			ChatEntityType:  "LINES",
+			Message:         "dạ em nhớ rồi ạ",
+			MessageOriginal: "[USER=1058]bot[/USER] dạ em nhớ rồi ạ",
+			MentionedList:   map[string]string{"1058": "1058"},
+			FromIsConnector: true,
+		},
+	})
+	msg, ok := drainOne(mb, 500*time.Millisecond)
+	if !ok {
+		t.Fatal("turn 2: expected inbound message")
+	}
+	if got := msg.Metadata[MetaKeyOpenlineRoster]; got != "Hiền Trịnh" {
+		t.Errorf("cross-turn MetaKeyOpenlineRoster = %q; want %q", got, "Hiền Trịnh")
+	}
+}
+
+// TestHandleMessage_DMNoRosterStamp verifies plain DMs never stamp the
+// openline roster key even when the body happens to contain `[Name]`-shaped
+// brackets — the feature is gated on isOpenChannel.
+func TestHandleMessage_DMNoRosterStamp(t *testing.T) {
+	ch, mb := newHandleTestChannel(t, 101, false)
+	defer resetWebhookRouterForTest()
+
+	ch.DispatchEvent(context.Background(), &Event{
+		Type: EventMessageAdd,
+		Params: EventParams{
+			FromUserID:  "42",
+			DialogID:    "42",
+			MessageID:   "m-2",
+			MessageType: "private",
+			Message:     "hỏi về [Cường Egany] nhé",
+		},
+	})
+	msg, ok := drainOne(mb, 500*time.Millisecond)
+	if !ok {
+		t.Fatal("expected inbound message")
+	}
+	if got := msg.Metadata[MetaKeyOpenlineRoster]; got != "" {
+		t.Errorf("DM must not stamp roster, got %q", got)
+	}
+}
+
+// TestHandleMessage_GroupNoRosterStamp verifies plain group chats (not
+// Open Channel) never stamp the openline roster key.
+func TestHandleMessage_GroupNoRosterStamp(t *testing.T) {
+	ch, mb := newHandleTestChannel(t, 200, true)
+	defer resetWebhookRouterForTest()
+
+	ch.DispatchEvent(context.Background(), &Event{
+		Type: EventMessageAdd,
+		Params: EventParams{
+			FromUserID:      "50",
+			DialogID:        "chat50",
+			MessageID:       "m-3",
+			MessageType:     "chat",
+			Message:         "hỏi [USER=200][/USER] về [Cường Egany] nhé",
+			MessageOriginal: "hỏi [USER=200][/USER] về [Cường Egany] nhé",
+			MentionedList:   map[string]string{"200": "200"},
+		},
+	})
+	msg, ok := drainOne(mb, 500*time.Millisecond)
+	if !ok {
+		t.Fatal("expected inbound message")
+	}
+	if got := msg.Metadata[MetaKeyOpenlineRoster]; got != "" {
+		t.Errorf("group chat must not stamp roster, got %q", got)
+	}
+}

@@ -99,6 +99,28 @@ type Channel struct {
 	// the negative-cache rationale.
 	nameCacheMu sync.Mutex
 	nameCache   map[string]nameCacheEntry
+
+	// Openline [Name] mention roster cache. Per-chat, in-memory, TTL-bounded
+	// list of names seen in `[Name]` mentions so cross-turn re-wrapping works
+	// (a name introduced in turn N is still known in turn N+5). See
+	// openline_mentions.go for the entry type, policy constants, and
+	// mergeAndGetRoster. Lazy-initialised on first use — nil map is safe to
+	// read from (mergeAndGetRoster allocates it under rosterMu).
+	rosterMu    sync.Mutex
+	rosterCache map[string]*rosterEntry
+
+	// nowFn is an injectable clock for roster TTL tests. nil means
+	// time.Now — see now(). Not used anywhere else on Channel.
+	nowFn func() time.Time
+}
+
+// now returns the current time, using the injected nowFn when set (tests)
+// or time.Now otherwise.
+func (c *Channel) now() time.Time {
+	if c.nowFn != nil {
+		return c.nowFn()
+	}
+	return time.Now()
 }
 
 // Type returns the platform identifier used by the router / health pages.

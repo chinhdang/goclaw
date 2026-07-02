@@ -41,6 +41,14 @@ const (
 	// name-only, or non-connector (operator) messages — those degrade safely to the
 	// group-level userID.
 	MetaKeyParticipantUserID = "participant_user_id"
+
+	// MetaKeyOpenlineRoster carries the pipe-joined list of [Name] mentions seen in
+	// the openline chat (accumulated per-chat, see openline_mentions.go). Set on
+	// inbound by handle.go ONLY for open-channel messages; forwarded by
+	// gateway_consumer_normal.go; read on outbound by Send() to re-wrap matching
+	// names as [Name] so the connector's downstream app can resolve them. Empty /
+	// absent for DM, group, and non-openline chats → outbound is a no-op there.
+	MetaKeyOpenlineRoster = "bitrix_openline_roster"
 )
 
 // Values for MetaKeyVisibility. Stored as strings (not bool) so callers

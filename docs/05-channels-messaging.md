@@ -792,6 +792,7 @@ The Bitrix24 channel connects to a Bitrix24 portal via the `imbot.v2.*` REST API
 - **Default DM policy**: `"pairing"` (requires pairing code)
 - **Pairing debounce**: 60-second debounce on pairing instructions
 - **Media max size**: Configurable `media_max_mb` (default 20 MB) applies symmetrically to inbound downloads and outbound uploads
+- **Open Channel mention preservation**: Inbound Open Channel messages may contain `[Full Name]` bracket mentions used by the downstream connector for exact-match routing. GoClaw extracts and caches these names per-chat (TTL 24 h, size-capped) and re-wraps matching names in outbound replies before Markdown→BBCode conversion, so the connector can always resolve the mention regardless of how the LLM echoes the name.
 
 ### Inbound Media
 

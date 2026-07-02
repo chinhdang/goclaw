@@ -563,3 +563,56 @@ func TestBuildAddressMention(t *testing.T) {
 // scaffolding for what is logically a single string-concat call site. The
 // helper test above pins the behaviour; trust the existing send pipeline
 // for chunk routing.)
+
+// TestSend_OL_EnforceMentionBrackets verifies the openline outbound
+// enforcement: when MetaKeyOpenlineRoster is present, Send() re-wraps a
+// prose occurrence of a roster name back into `[Name]` (canonical casing)
+// before Markdown→BBCode conversion, so the connector can still resolve it.
+func TestSend_OL_EnforceMentionBrackets(t *testing.T) {
+	rt := &captureRT{result: `{"result":{"id":1}}`}
+	client := newStubClient("test.bitrix24.com", rt)
+	ch, _ := newFakeChannelWithClient(t, client)
+	ch.SetRunning(true)
+
+	msg := bus.OutboundMessage{
+		ChatID:  "chat4878",
+		Content: "Dạ chào anh Cường Egany",
+		Metadata: map[string]string{
+			MetaKeyVisibility:     VisibilityPublic,
+			MetaKeyOpenlineRoster: "Cường Egany",
+		},
+	}
+	if err := ch.Send(context.Background(), msg); err != nil {
+		t.Fatalf("Send error: %v", err)
+	}
+	if len(rt.reqs) != 1 {
+		t.Fatalf("expected exactly 1 HTTP call, got %d", len(rt.reqs))
+	}
+	want := "Dạ chào anh [Cường Egany]"
+	if got := rt.reqs[0].Get("fields[message]"); got != want {
+		t.Errorf("fields[message] = %q; want %q", got, want)
+	}
+}
+
+// TestSend_OL_NoRosterEnforceNoOp verifies DM/group/non-openline replies
+// (no MetaKeyOpenlineRoster set) pass through unchanged — enforce is a
+// strict no-op when the key is absent.
+func TestSend_OL_NoRosterEnforceNoOp(t *testing.T) {
+	rt := &captureRT{result: `{"result":{"id":1}}`}
+	client := newStubClient("test.bitrix24.com", rt)
+	ch, _ := newFakeChannelWithClient(t, client)
+	ch.SetRunning(true)
+
+	msg := bus.OutboundMessage{
+		ChatID:   "chat4878",
+		Content:  "Dạ chào anh Cường Egany",
+		Metadata: map[string]string{MetaKeyVisibility: VisibilityPublic},
+	}
+	if err := ch.Send(context.Background(), msg); err != nil {
+		t.Fatalf("Send error: %v", err)
+	}
+	want := "Dạ chào anh Cường Egany"
+	if got := rt.reqs[0].Get("fields[message]"); got != want {
+		t.Errorf("fields[message] = %q; want %q (no roster → no-op)", got, want)
+	}
+}

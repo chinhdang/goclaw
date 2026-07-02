@@ -239,6 +239,11 @@ func processNormalMessage(
 	if v := msg.Metadata[bitrix24.MetaKeySenderPrefix]; v != "" {
 		outMeta[bitrix24.MetaKeySenderPrefix] = v
 	}
+	// Openline [Name] mention roster captured on inbound → Send() re-wraps
+	// matching names the LLM writes back unbracketed/recased.
+	if v := msg.Metadata[bitrix24.MetaKeyOpenlineRoster]; v != "" {
+		outMeta[bitrix24.MetaKeyOpenlineRoster] = v
+	}
 
 	// Register run with channel manager for streaming/reaction event forwarding.
 	// Use localKey (composite key with topic suffix) so streaming/reaction events

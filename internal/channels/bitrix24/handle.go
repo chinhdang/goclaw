@@ -298,6 +298,19 @@ func (c *Channel) handleMessage(ctx context.Context, evt *Event) {
 	if participantSenderID != "" {
 		meta[MetaKeyParticipantUserID] = participantSenderID
 	}
+	// Openline [Name] mention roster: extract any bracket mentions from this
+	// turn's body and merge into the per-chat cache, then stamp the FULL
+	// cached roster (not just this turn's new names) so send.go can re-wrap
+	// names the LLM references from earlier turns too. text is already
+	// sender-tag-stripped above, so the customer's own leading tag isn't
+	// double-counted; other [Name] mentions in the body still are. No-op for
+	// DM/group — gated on isOpenChannel — and for chats with no roster yet.
+	if isOpenChannel {
+		names := extractOpenlineNameMentions(text)
+		if roster := c.mergeAndGetRoster(chatID, names); len(roster) > 0 {
+			meta[MetaKeyOpenlineRoster] = strings.Join(roster, "|")
+		}
+	}
 	if evt.Params.ReplyToMID != "" {
 		meta["bitrix_reply_to_mid"] = evt.Params.ReplyToMID
 	}

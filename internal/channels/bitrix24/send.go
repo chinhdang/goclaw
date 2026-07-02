@@ -80,6 +80,15 @@ func (c *Channel) Send(ctx context.Context, msg bus.OutboundMessage) error {
 		return nil
 	}
 
+	// Openline-only: re-wrap [Name] mentions the LLM may have echoed back
+	// unbracketed or recased. Guarded by roster metadata presence — absent
+	// for DM/group/non-openline → no-op there. Runs BEFORE Markdown→BBCode
+	// conversion so wrapping sees plain text; the wrapped [Name] (plain
+	// brackets, not a Markdown link) then passes through untouched.
+	if roster := msg.Metadata[MetaKeyOpenlineRoster]; roster != "" {
+		text = enforceOpenlineMentionBrackets(text, strings.Split(roster, "|"))
+	}
+
 	// Convert LLM Markdown output to Bitrix24 BBCode BEFORE chunking. The
 	// chunker then operates on the final wire shape — whatever it cuts on
 	// is what Bitrix24 renders, and we can't leak half-converted Markdown
