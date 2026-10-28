@@ -809,6 +809,11 @@ func runGateway() {
 	channelMgr.SetSystemMessages(systemmessages.NewResolver(cfg))
 	deps.channelMgr = channelMgr
 	server.SetChannelManager(channelMgr)
+	// wireHTTPHandlersOnServer ran before channelMgr existed; mount the webhook
+	// message endpoint now (otherwise /v1/webhooks/message would 404).
+	if deps.wireWebhookMessage != nil {
+		deps.wireWebhookMessage()
+	}
 
 	// Wire channel member resolver into permission grant paths (WS + HTTP) so
 	// file_writer grants coming from the Web UI auto-enrich their metadata.

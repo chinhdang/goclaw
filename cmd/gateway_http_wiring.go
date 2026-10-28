@@ -200,26 +200,6 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			d.server.SetWebhooksAdminHandler(adminH)
 		}
 
-		// Webhook message endpoint — Standard edition only (channels required).
-		// Phase 05b: POST /v1/webhooks/message → sync channel send (text + optional media).
-		var msgH *httpapi.WebhookMessageHandler
-		if edition.Current().AllowsChannels() &&
-			d.pgStores != nil &&
-			d.pgStores.Webhooks != nil &&
-			d.pgStores.WebhookCalls != nil &&
-			d.pgStores.ChannelInstances != nil &&
-			d.channelMgr != nil {
-			msgH = httpapi.NewWebhookMessageHandler(
-				d.channelMgr,
-				d.pgStores.ChannelInstances,
-				d.pgStores.WebhookCalls,
-				d.pgStores.Webhooks,
-				sharedWebhookLimiter, // K10: shared limiter
-			)
-			msgH.SetEncKey(webhookEncKey) // K6: decrypt secret at HMAC verify time
-			d.server.SetWebhookMessageHandler(msgH)
-		}
-
 		// Webhook LLM endpoint — all editions (Standard + Lite).
 		// Phase 06: POST /v1/webhooks/llm → sync agent run (≤30s) or async enqueue.
 		// LocalhostOnly enforcement is handled by WebhookAuthMiddleware at request time.
@@ -242,10 +222,36 @@ func (d *gatewayDeps) wireHTTPHandlersOnServer(
 			d.server.SetWebhookLLMHandler(llmH)
 		}
 
-		// Wire the admin test endpoint with runtime invokers. msgH is nil on Lite — the
-		// admin handler guards on nil and rejects message tests there.
+		// Webhook message endpoint — Standard edition only (channels required).
+		// Phase 05b: POST /v1/webhooks/message → sync channel send (text + optional media).
+		// channelMgr does not exist yet (wireHTTP runs before runGateway creates it), so
+		// mounting is deferred: runGateway calls d.wireWebhookMessage right after
+		// deps.channelMgr is assigned. The admin test endpoint is also wired there, since
+		// it needs msgH. Until then it only gets the LLM tester.
 		if adminH != nil {
-			adminH.SetTesters(llmH, msgH)
+			adminH.SetTesters(llmH, nil)
+		}
+		d.wireWebhookMessage = func() {
+			if d.channelMgr == nil ||
+				!edition.Current().AllowsChannels() ||
+				d.pgStores == nil ||
+				d.pgStores.Webhooks == nil ||
+				d.pgStores.WebhookCalls == nil ||
+				d.pgStores.ChannelInstances == nil {
+				return
+			}
+			msgH := httpapi.NewWebhookMessageHandler(
+				d.channelMgr,
+				d.pgStores.ChannelInstances,
+				d.pgStores.WebhookCalls,
+				d.pgStores.Webhooks,
+				sharedWebhookLimiter, // K10: shared limiter
+			)
+			msgH.SetEncKey(webhookEncKey) // K6: decrypt secret at HMAC verify time
+			d.server.SetWebhookMessageHandler(msgH)
+			if adminH != nil {
+				adminH.SetTesters(llmH, msgH)
+			}
 		}
 	}
 

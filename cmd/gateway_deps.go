@@ -43,4 +43,9 @@ type gatewayDeps struct {
 	audioMgr         *audio.Manager      // nil if TTS not configured; used by TTSHandler
 	ttsHandler       *httpapi.TTSHandler // nil if TTS not configured; for hot-reload
 	teamWorkEmbedder memory.EmbeddingProvider
+
+	// wireWebhookMessage mounts POST /v1/webhooks/message once channelMgr exists.
+	// Set by wireHTTPHandlersOnServer (nil when the webhook subsystem is disabled);
+	// called by runGateway right after deps.channelMgr is assigned.
+	wireWebhookMessage func()
 }
